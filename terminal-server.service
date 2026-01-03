@@ -1,0 +1,15 @@
+[Unit]
+Description=Mobile Terminal Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/claude/workspace/terminal
+ExecStart=/bin/bash /home/claude/workspace/terminal/dev.sh
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=development
+
+[Install]
+WantedBy=multi-user.target
