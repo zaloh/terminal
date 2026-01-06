@@ -27,6 +27,9 @@ export default function Terminal({ sessionName, onReady }: TerminalProps) {
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const manualScrollRef = useRef(false); // Track if user manually scrolled via buttons
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const isUnmountedRef = useRef(false);
 
   const sendInput = useCallback((data: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -201,39 +204,59 @@ export default function Terminal({ sessionName, onReady }: TerminalProps) {
 
     requestAnimationFrame(updateCols);
 
-    // Connect WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/terminal?session=${sessionName}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    // Connect WebSocket with reconnection logic
+    const connectWebSocket = () => {
+      if (isUnmountedRef.current) return;
 
-    ws.onopen = () => {
-      if (scrollContainerRef.current) {
-        const containerWidth = scrollContainerRef.current.clientWidth - 16;
-        const charWidth = 8.4;
-        const cols = Math.floor(containerWidth / charWidth);
-        ws.send(JSON.stringify({ type: 'resize', cols: Math.max(cols, 40), rows: TERMINAL_ROWS }));
-      }
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/terminal?session=${sessionName}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttemptRef.current = 0; // Reset on successful connection
+        if (scrollContainerRef.current) {
+          const containerWidth = scrollContainerRef.current.clientWidth - 16;
+          const charWidth = 8.4;
+          const cols = Math.floor(containerWidth / charWidth);
+          ws.send(JSON.stringify({ type: 'resize', cols: Math.max(cols, 40), rows: TERMINAL_ROWS }));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        terminal.write(event.data);
+        // No auto-scroll on output - only scroll when keyboard opens
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        terminal.write('\r\n\x1b[31mConnection error\x1b[0m\r\n');
+      };
+
+      ws.onclose = () => {
+        if (isUnmountedRef.current) return;
+
+        const attempt = reconnectAttemptRef.current;
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000); // Exponential backoff, max 30s
+        reconnectAttemptRef.current++;
+
+        terminal.write(`\r\n\x1b[33mConnection closed. Reconnecting in ${delay / 1000}s...\x1b[0m\r\n`);
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          if (!isUnmountedRef.current) {
+            terminal.write('\r\n\x1b[36mAttempting to reconnect...\x1b[0m\r\n');
+            connectWebSocket();
+          }
+        }, delay);
+      };
     };
 
-    ws.onmessage = (event) => {
-      terminal.write(event.data);
-      // No auto-scroll on output - only scroll when keyboard opens
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      terminal.write('\r\n\x1b[31mConnection error\x1b[0m\r\n');
-    };
-
-    ws.onclose = () => {
-      terminal.write('\r\n\x1b[33mConnection closed\x1b[0m\r\n');
-    };
+    connectWebSocket();
 
     // Handle terminal input
     terminal.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data }));
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data }));
       }
     });
 
@@ -262,8 +285,12 @@ export default function Terminal({ sessionName, onReady }: TerminalProps) {
     }
 
     return () => {
+      isUnmountedRef.current = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       resizeObserver.disconnect();
-      ws.close();
+      wsRef.current?.close();
       webglAddonRef.current?.dispose();
       terminal.dispose();
     };
