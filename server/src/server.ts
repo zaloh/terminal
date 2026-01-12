@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
@@ -9,9 +10,13 @@ import type { IPty } from 'node-pty';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WORKSPACE_ROOT = '/home/claude/workspace';
-const TMUX_USER = 'claude';
-const MAX_FILE_SIZE = 6 * 1024 * 1024; // 6MB
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/home/selstad/Desktop';
+const TMUX_USER = process.env.TMUX_USER || 'selstad';
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6MB default
+
+// Shared tmux socket path - connects to orchestrator sessions
+const TMUX_SOCKET = process.env.TMUX_SOCKET || '/tmp/orchestrator-tmux.sock';
+const tmuxSocketArg = TMUX_SOCKET ? `-S '${TMUX_SOCKET}'` : '';
 
 app.use(cors());
 app.use(express.json());
@@ -32,7 +37,7 @@ interface Session {
 function getTmuxSessions(): Session[] {
   try {
     const result = require('child_process').execSync(
-      `su - ${TMUX_USER} -c "tmux list-sessions -F '#{session_name}|#{session_created}|#{session_activity}' 2>/dev/null"`,
+      `tmux ${tmuxSocketArg} list-sessions -F '#{session_name}|#{session_created}|#{session_activity}' 2>/dev/null`,
       { encoding: 'utf-8' }
     );
     return result
@@ -55,7 +60,7 @@ function getTmuxSessions(): Session[] {
 function sessionExists(sessionName: string): boolean {
   try {
     require('child_process').execSync(
-      `su - ${TMUX_USER} -c "tmux has-session -t '${sessionName}' 2>/dev/null"`,
+      `tmux ${tmuxSocketArg} has-session -t '${sessionName}' 2>/dev/null`,
       { encoding: 'utf-8' }
     );
     return true;
@@ -67,7 +72,7 @@ function sessionExists(sessionName: string): boolean {
 function createTmuxSession(sessionName: string): boolean {
   try {
     require('child_process').execSync(
-      `su - ${TMUX_USER} -c "cd ${WORKSPACE_ROOT} && tmux new-session -d -s '${sessionName}'"`,
+      `cd ${WORKSPACE_ROOT} && tmux ${tmuxSocketArg} new-session -d -s '${sessionName}'`,
       { encoding: 'utf-8' }
     );
     return true;
@@ -109,7 +114,7 @@ app.delete('/api/sessions/:name', (req, res) => {
   const { name } = req.params;
   try {
     require('child_process').execSync(
-      `su - ${TMUX_USER} -c "tmux kill-session -t '${name}' 2>/dev/null"`,
+      `tmux ${tmuxSocketArg} kill-session -t '${name}' 2>/dev/null`,
       { encoding: 'utf-8' }
     );
     res.json({ success: true });
@@ -254,7 +259,10 @@ wss.on('connection', (ws, req) => {
   }
 
   // Spawn PTY that attaches to tmux session
-  const pty = spawn('su', ['-', TMUX_USER, '-c', `tmux attach-session -t '${sanitized}'`], {
+  const tmuxArgs = TMUX_SOCKET
+    ? ['-S', TMUX_SOCKET, 'attach-session', '-t', sanitized]
+    : ['attach-session', '-t', sanitized];
+  const pty = spawn('tmux', tmuxArgs, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -319,4 +327,5 @@ app.use((_req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Using tmux socket: ${TMUX_SOCKET || 'default'}`);
 });

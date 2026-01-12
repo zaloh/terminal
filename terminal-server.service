@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/home/claude/workspace/terminal
-ExecStart=/bin/bash /home/claude/workspace/terminal/dev.sh
+WorkingDirectory=/home/selstad/Desktop/terminal-workspace/terminal
+ExecStart=/bin/bash /home/selstad/Desktop/terminal-workspace/terminal/dev.sh
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=development

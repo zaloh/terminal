@@ -1,7 +1,7 @@
 #!/bin/bash
 # Development mode - runs both server and frontend with hot reload
 
-BASE=/home/claude/workspace/terminal
+BASE=/home/selstad/Desktop/terminal-workspace/terminal
 
 # Start server on port 3002 with tsx watch
 (cd "$BASE/server" && PORT=3002 npm run dev) &

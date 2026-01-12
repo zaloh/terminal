@@ -50,14 +50,6 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
     }
   };
 
-  const handleScrollUp = () => {
-    terminalRef?.scrollUp();
-  };
-
-  const handleScrollDown = () => {
-    terminalRef?.scrollDown();
-  };
-
   return (
     <div className="h-dvh flex flex-col bg-[#1a1a2e]">
       {/* Header with back button and tabs */}
