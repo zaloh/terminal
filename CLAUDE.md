@@ -40,6 +40,33 @@ cd /opt/terminal/frontend && npm run build
 sudo systemctl restart terminal-server.service
 ```
 
+## Cloudflare Tunnel
+
+- **Tunnel name**: `selstek-terminal`
+- **Tunnel ID**: `bc04edd9-eb56-4c1a-b515-039520207dc0`
+- **Domain**: `terminal.selst.uk` (CNAME pointing to tunnel)
+- **Access**: Configured with Google identity provider, restricted to shiftmaker@gmail.com and makeshifted@gmail.com
+
+**Tunnel commands:**
+```bash
+cloudflared tunnel list
+cloudflared tunnel info selstek-terminal
+cloudflared tunnel route dns selstek-terminal terminal.selst.uk  # update DNS
+```
+
+## Cloudflare Zero Trust Access
+
+See [CLOUDFLARE_ACCESS_SETUP.md](./CLOUDFLARE_ACCESS_SETUP.md) for detailed setup instructions.
+
+**Quick setup when you have credentials:**
+```bash
+export CF_API_TOKEN="your-api-token"
+export CF_TEAM_NAME="your-team-name"
+export GOOGLE_CLIENT_ID="your-google-oauth-client-id"
+export GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"
+/opt/terminal/setup-cloudflare-access.sh
+```
+
 ## Development Mode
 
 ```bash
