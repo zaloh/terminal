@@ -180,6 +180,10 @@ export default function Terminal({ sessionName, onReady }: TerminalProps) {
     // Open terminal in container
     terminal.open(containerRef.current);
 
+    // Use xterm.js custom wheel handler to disable default wheel->arrow-key behavior
+    // Returning false tells xterm to skip its internal wheel handling, allowing native page scroll
+    terminal.attachCustomWheelEventHandler(() => false);
+
     // Load WebGL addon after terminal is opened
     try {
       const webglAddon = new WebglAddon();
