@@ -85,51 +85,31 @@ PORT=3000 npm start
 
 The server serves both the API and the built frontend from `frontend/dist`.
 
-### Systemd Service
+### Systemd Service (User Mode)
 
-Copy the service file and enable it:
+The service runs as a **user-level systemd service** (no sudo needed for management).
 
 ```bash
-# Copy service file (adjust paths if needed)
-sudo cp terminal-server.service /etc/systemd/system/
+# Service config lives at:
+# ~/.config/systemd/user/terminal-server.service
 
-# Edit the service file to update paths for your system
-sudo nano /etc/systemd/system/terminal-server.service
-
-# Reload and enable
-sudo systemctl daemon-reload
-sudo systemctl enable terminal-server
-sudo systemctl start terminal-server
-
-# Check status
-sudo systemctl status terminal-server
+# Manage the service (no sudo needed)
+systemctl --user start terminal-server
+systemctl --user stop terminal-server
+systemctl --user restart terminal-server
+systemctl --user status terminal-server
 
 # View logs
-journalctl -u terminal-server -f
+journalctl --user -u terminal-server -f
+
+# After editing the service file
+systemctl --user daemon-reload
 ```
 
-### Service File Reference
-
-The included `terminal-server.service` runs in development mode. For production, create a modified version:
-
-```ini
-[Unit]
-Description=Mobile Terminal Server
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/path/to/terminal/server
-ExecStart=/usr/bin/node dist/server.js
-Restart=always
-RestartSec=5
-Environment=NODE_ENV=production
-Environment=PORT=3000
-
-[Install]
-WantedBy=multi-user.target
-```
+Key service features:
+- `KillMode=process` - only kills Node on restart, tmux sessions survive
+- `ExecStartPre` - ensures tmux server is running before Node starts
+- Shared tmux socket at `/tmp/orchestrator-tmux.sock`
 
 ## Configuration
 

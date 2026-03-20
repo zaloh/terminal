@@ -145,7 +145,95 @@ body {
   text-decoration: underline;
 }
 
+/* Connection status dot */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-connected { background-color: #4ade80; animation: pulse 2s infinite; }
+.status-connecting { background-color: #facc15; animation: pulse 1s infinite; }
+.status-disconnected { background-color: #f87171; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* Prevent iOS zoom on input focus */
 input, textarea, select {
   font-size: 16px;
+}
+
+/* Chat markdown styles */
+.chat-markdown h1 { font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0 0.5rem; color: #e2e8f0; }
+.chat-markdown h2 { font-size: 1.125rem; font-weight: 600; margin: 0.625rem 0 0.375rem; color: #e2e8f0; }
+.chat-markdown h3 { font-size: 1rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: #e2e8f0; }
+.chat-markdown p { margin: 0.375rem 0; line-height: 1.6; }
+.chat-markdown ul, .chat-markdown ol { margin: 0.375rem 0; padding-left: 1.5rem; }
+.chat-markdown li { margin: 0.125rem 0; line-height: 1.5; }
+.chat-markdown li::marker { color: #4fd1c5; }
+
+.chat-markdown code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  background: #252540;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  color: #4fd1c5;
+}
+
+.chat-markdown pre {
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: #151528 !important;
+  border: 1px solid #2d2d4a;
+}
+
+.chat-markdown pre code {
+  display: block;
+  padding: 0.75rem;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.chat-markdown a {
+  color: #4fd1c5;
+  text-decoration: underline;
+}
+
+.chat-markdown blockquote {
+  border-left: 3px solid #4fd1c5;
+  margin: 0.5rem 0;
+  padding: 0.25rem 0.75rem;
+  color: #94a3b8;
+}
+
+.chat-markdown table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.chat-markdown th, .chat-markdown td {
+  border: 1px solid #2d2d4a;
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+}
+
+.chat-markdown th {
+  background: #252540;
+  font-weight: 600;
+}
+
+.chat-markdown hr {
+  border: none;
+  border-top: 1px solid #2d2d4a;
+  margin: 0.75rem 0;
 }

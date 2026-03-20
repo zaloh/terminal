@@ -16,10 +16,13 @@
     "@xterm/xterm": "^6.0.0",
     "cors": "^2.8.5",
     "express": "^5.2.1",
+    "ghostty-web": "^0.4.0",
     "highlight.js": "^11.11.1",
     "node-pty": "^1.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
