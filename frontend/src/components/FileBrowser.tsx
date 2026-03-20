@@ -23,7 +23,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function FileBrowser() {
-  const [currentPath, setCurrentPath] = useState('/home/selstad/Desktop');
+  const [currentPath, setCurrentPath] = useState('/');
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
