@@ -146,10 +146,11 @@ app.delete('/api/sessions/:name', (req, res) => {
   }
 });
 
-// File browser API
+// File browser API — allow browsing anywhere within the user's home directory
+const HOME_DIR = os.homedir();
 function isPathSafe(requestedPath: string): boolean {
   const resolved = path.resolve(requestedPath);
-  return resolved.startsWith(WORKSPACE_ROOT);
+  return resolved === HOME_DIR || resolved.startsWith(HOME_DIR + path.sep);
 }
 
 app.get('/api/files', (req, res) => {
@@ -187,7 +188,7 @@ app.get('/api/files', (req, res) => {
 
     res.json({
       path: requestedPath,
-      parent: requestedPath !== WORKSPACE_ROOT ? path.dirname(requestedPath) : null,
+      parent: path.resolve(requestedPath) !== HOME_DIR ? path.dirname(requestedPath) : null,
       files,
     });
   } catch (e) {
