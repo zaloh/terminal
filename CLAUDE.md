@@ -42,16 +42,16 @@ sudo systemctl restart terminal-server.service
 
 ## Cloudflare Tunnel
 
-- **Tunnel name**: `selstek-terminal`
-- **Tunnel ID**: `bc04edd9-eb56-4c1a-b515-039520207dc0`
-- **Domain**: `terminal.selst.uk` (CNAME pointing to tunnel)
-- **Access**: Configured with Google identity provider, restricted to shiftmaker@gmail.com and makeshifted@gmail.com
+- **Tunnel**: `selst.uk` (using cloudflared service)
+- **URL**: `https://selst.uk/terminal`
+- **Ingress config**: `/etc/cloudflared/config.yml`
+- **Service**: `cloudflared.service` (systemd)
 
-**Tunnel commands:**
+**Commands:**
 ```bash
-cloudflared tunnel list
-cloudflared tunnel info selstek-terminal
-cloudflared tunnel route dns selstek-terminal terminal.selst.uk  # update DNS
+sudo systemctl status cloudflared        # check tunnel status
+sudo systemctl restart cloudflared       # restart tunnel
+sudo tail -f /var/log/cloudflared.log   # view logs
 ```
 
 ## Cloudflare Zero Trust Access
