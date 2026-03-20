@@ -5,13 +5,14 @@ import http from 'http';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { spawn } from 'node-pty';
 import type { IPty } from 'node-pty';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/home/selstad/Desktop';
-const TMUX_USER = process.env.TMUX_USER || 'selstad';
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || os.homedir();
+const TMUX_USER = process.env.TMUX_USER || os.userInfo().username;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6MB default
 
 // Shared tmux socket path - connects to orchestrator sessions
