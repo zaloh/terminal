@@ -20,6 +20,9 @@ const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6
 const TMUX_SOCKET = process.env.TMUX_SOCKET || '/tmp/orchestrator-tmux.sock';
 const tmuxSocketArg = TMUX_SOCKET ? `-S '${TMUX_SOCKET}'` : '';
 
+// Optional VNC tab - disabled by default; set VNC_URL to enable
+const VNC_URL = process.env.VNC_URL || '';
+
 app.use(cors());
 app.use(express.json());
 
@@ -98,6 +101,10 @@ function getTmuxPaneCwd(sessionName: string): string | null {
 }
 
 // API Routes
+app.get('/api/config', (_req, res) => {
+  res.json({ vncUrl: VNC_URL || null });
+});
+
 app.get('/api/sessions', (_req, res) => {
   const sessions = getTmuxSessions();
   res.json(sessions);

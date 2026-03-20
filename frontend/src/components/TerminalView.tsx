@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Terminal from './Terminal';
 import ControlBar from './ControlBar';
 import FileBrowser from './FileBrowser';
@@ -26,6 +26,14 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
   const [terminalRef, setTerminalRef] = useState<TerminalRef | null>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(true);
+  const [vncUrl, setVncUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => setVncUrl(cfg.vncUrl || null))
+      .catch(() => {});
+  }, []);
 
   const handleConnectionChange = useCallback((conn: boolean, conning: boolean) => {
     setConnected(conn);
@@ -93,16 +101,18 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           >
             Files
           </button>
-          <button
-            onClick={() => setActiveTab('vnc')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'vnc'
-                ? 'bg-[#4fd1c5] text-[#1a1a2e]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            VNC
-          </button>
+          {vncUrl && (
+            <button
+              onClick={() => setActiveTab('vnc')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'vnc'
+                  ? 'bg-[#4fd1c5] text-[#1a1a2e]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              VNC
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -133,9 +143,9 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
         )}
         {activeTab === 'files' && <FileBrowser />}
         {activeTab === 'chat' && <ChatView sessionName={sessionName} />}
-        {activeTab === 'vnc' && (
+        {activeTab === 'vnc' && vncUrl && (
           <iframe
-            src="https://sunshine.sels.tech/play"
+            src={vncUrl}
             className="w-full h-full border-0"
             allow="fullscreen; clipboard-read; clipboard-write"
           />
