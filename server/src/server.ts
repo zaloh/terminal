@@ -13,7 +13,7 @@ import readline from 'readline';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || os.homedir();
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(os.homedir(), 'Desktop');
 const TMUX_USER = process.env.TMUX_USER || os.userInfo().username;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6MB default
 
@@ -103,7 +103,7 @@ function getTmuxPaneCwd(sessionName: string): string | null {
 
 // API Routes
 app.get('/api/config', (_req, res) => {
-  res.json({ vncUrl: VNC_URL || null });
+  res.json({ vncUrl: VNC_URL || null, rootPath: WORKSPACE_ROOT });
 });
 
 app.get('/api/sessions', (_req, res) => {
@@ -146,10 +146,11 @@ app.delete('/api/sessions/:name', (req, res) => {
   }
 });
 
-// File browser API
+// File browser API — allow browsing anywhere within the user's home directory
+const HOME_DIR = os.homedir();
 function isPathSafe(requestedPath: string): boolean {
   const resolved = path.resolve(requestedPath);
-  return resolved.startsWith(WORKSPACE_ROOT);
+  return resolved === HOME_DIR || resolved.startsWith(HOME_DIR + path.sep);
 }
 
 app.get('/api/files', (req, res) => {
@@ -187,7 +188,7 @@ app.get('/api/files', (req, res) => {
 
     res.json({
       path: requestedPath,
-      parent: requestedPath !== WORKSPACE_ROOT ? path.dirname(requestedPath) : null,
+      parent: path.resolve(requestedPath) !== HOME_DIR ? path.dirname(requestedPath) : null,
       files,
     });
   } catch (e) {

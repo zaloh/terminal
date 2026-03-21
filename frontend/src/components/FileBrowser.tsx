@@ -23,7 +23,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function FileBrowser() {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [currentPath, setCurrentPath] = useState('');
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,7 +50,10 @@ export default function FileBrowser() {
   };
 
   useEffect(() => {
-    fetchDirectory(currentPath);
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => fetchDirectory(cfg.rootPath || '/'))
+      .catch(() => fetchDirectory('/'));
   }, []);
 
   const handleNavigate = (entry: FileEntry) => {
