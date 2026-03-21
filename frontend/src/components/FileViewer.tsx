@@ -7,144 +7,91 @@ interface FileViewerProps {
   onBack: () => void;
 }
 
-interface TextContent {
-  type: 'text';
-  content: string;
-  extension: string;
-}
-
-interface ImageContent {
-  type: 'image';
-  mimeType: string;
-  content: string;
-}
-
-type FileContent = TextContent | ImageContent;
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico']);
+const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mov', '.mkv', '.avi']);
 
 function getLanguage(extension: string): string | undefined {
   const map: Record<string, string> = {
-    '.js': 'javascript',
-    '.jsx': 'javascript',
-    '.ts': 'typescript',
-    '.tsx': 'typescript',
-    '.py': 'python',
-    '.rb': 'ruby',
-    '.go': 'go',
-    '.rs': 'rust',
-    '.java': 'java',
-    '.c': 'c',
-    '.cpp': 'cpp',
-    '.h': 'c',
-    '.hpp': 'cpp',
-    '.cs': 'csharp',
-    '.php': 'php',
-    '.swift': 'swift',
-    '.kt': 'kotlin',
-    '.scala': 'scala',
-    '.sh': 'bash',
-    '.bash': 'bash',
-    '.zsh': 'bash',
-    '.fish': 'bash',
-    '.ps1': 'powershell',
-    '.sql': 'sql',
-    '.html': 'html',
-    '.htm': 'html',
-    '.css': 'css',
-    '.scss': 'scss',
-    '.sass': 'scss',
-    '.less': 'less',
-    '.json': 'json',
-    '.xml': 'xml',
-    '.yaml': 'yaml',
-    '.yml': 'yaml',
-    '.toml': 'toml',
-    '.ini': 'ini',
-    '.md': 'markdown',
-    '.markdown': 'markdown',
-    '.dockerfile': 'dockerfile',
-    '.makefile': 'makefile',
-    '.cmake': 'cmake',
-    '.graphql': 'graphql',
-    '.gql': 'graphql',
-    '.vue': 'vue',
-    '.svelte': 'svelte',
+    '.js': 'javascript', '.jsx': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
+    '.py': 'python', '.rb': 'ruby', '.go': 'go', '.rs': 'rust', '.java': 'java',
+    '.c': 'c', '.cpp': 'cpp', '.h': 'c', '.hpp': 'cpp', '.cs': 'csharp',
+    '.php': 'php', '.swift': 'swift', '.kt': 'kotlin', '.scala': 'scala',
+    '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash', '.fish': 'bash',
+    '.ps1': 'powershell', '.sql': 'sql', '.html': 'html', '.htm': 'html',
+    '.css': 'css', '.scss': 'scss', '.sass': 'scss', '.less': 'less',
+    '.json': 'json', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml',
+    '.toml': 'toml', '.ini': 'ini', '.md': 'markdown', '.markdown': 'markdown',
+    '.dockerfile': 'dockerfile', '.makefile': 'makefile', '.cmake': 'cmake',
+    '.graphql': 'graphql', '.gql': 'graphql', '.vue': 'vue', '.svelte': 'svelte',
   };
   return map[extension.toLowerCase()];
 }
 
 export default function FileViewer({ filePath, onBack }: FileViewerProps) {
-  const [content, setContent] = useState<FileContent | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [textContent, setTextContent] = useState<{ content: string; extension: string } | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [zoomed, setZoomed] = useState(false);
 
-  useEffect(() => {
-    const fetchContent = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const res = await fetch(`/api/files/content?path=${encodeURIComponent(filePath)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setContent(data);
-        } else {
-          const { error } = await res.json();
-          setError(error || 'Failed to load file');
-        }
-      } catch (e) {
-        setError('Failed to load file');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchContent();
-  }, [filePath]);
-
+  const ext = ('.' + filePath.split('.').pop()).toLowerCase();
+  const isImage = IMAGE_EXTS.has(ext);
+  const isVideo = VIDEO_EXTS.has(ext);
+  const streamUrl = `/api/files/stream?path=${encodeURIComponent(filePath)}`;
   const fileName = filePath.split('/').pop() || '';
 
+  useEffect(() => {
+    if (isImage || isVideo) return;
+    setLoading(true);
+    setError('');
+    fetch(`/api/files/content?path=${encodeURIComponent(filePath)}`)
+      .then(r => r.ok ? r.json() : r.json().then((d: { error: string }) => Promise.reject(d.error)))
+      .then(data => setTextContent({ content: data.content, extension: data.extension }))
+      .catch(e => setError(typeof e === 'string' ? e : 'Failed to load file'))
+      .finally(() => setLoading(false));
+  }, [filePath]);
+
   const renderContent = () => {
-    if (loading) {
-      return <div className="text-slate-400 text-center py-8">Loading...</div>;
-    }
-
-    if (error) {
-      return <div className="text-red-400 text-center py-8">{error}</div>;
-    }
-
-    if (!content) {
-      return <div className="text-slate-400 text-center py-8">No content</div>;
-    }
-
-    if (content.type === 'image') {
+    if (isImage) {
       return (
         <div className="flex items-center justify-center p-4 min-h-[200px]">
           <img
-            src={`data:${content.mimeType};base64,${content.content}`}
+            src={streamUrl}
             alt={fileName}
-            className="max-w-full max-h-[70vh] object-contain"
+            className="max-w-full max-h-[70vh] object-contain cursor-zoom-in"
+            onClick={() => setZoomed(true)}
           />
         </div>
       );
     }
 
-    // Text content with syntax highlighting
-    const language = getLanguage(content.extension);
-    let highlighted: string;
+    if (isVideo) {
+      return (
+        <div className="flex items-center justify-center p-4">
+          <video
+            src={streamUrl}
+            controls
+            className="max-w-full max-h-[75vh]"
+          />
+        </div>
+      );
+    }
 
+    if (loading) return <div className="text-slate-400 text-center py-8">Loading...</div>;
+    if (error) return <div className="text-red-400 text-center py-8">{error}</div>;
+    if (!textContent) return <div className="text-slate-400 text-center py-8">No content</div>;
+
+    const language = getLanguage(textContent.extension);
+    let highlighted: string;
     try {
-      if (language) {
-        highlighted = hljs.highlight(content.content, { language }).value;
-      } else {
-        highlighted = hljs.highlightAuto(content.content).value;
-      }
+      highlighted = language
+        ? hljs.highlight(textContent.content, { language }).value
+        : hljs.highlightAuto(textContent.content).value;
     } catch {
-      highlighted = content.content
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      highlighted = textContent.content
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     const lines = highlighted.split('\n');
-
     return (
       <div className="overflow-x-auto">
         <table className="w-full text-sm font-mono">
@@ -178,15 +125,27 @@ export default function FileViewer({ filePath, onBack }: FileViewerProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="text-sm text-white font-medium truncate flex-1">
-          {fileName}
-        </span>
+        <span className="text-sm text-white font-medium truncate flex-1">{fileName}</span>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto bg-[#252540]">
         {renderContent()}
       </div>
+
+      {/* Zoom lightbox */}
+      {zoomed && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setZoomed(false)}
+        >
+          <img
+            src={streamUrl}
+            alt={fileName}
+            className="max-w-full max-h-full object-contain cursor-zoom-out"
+          />
+        </div>
+      )}
     </div>
   );
 }

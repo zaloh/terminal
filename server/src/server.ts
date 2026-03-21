@@ -215,35 +215,52 @@ app.get('/api/files/content', (req, res) => {
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
-
-    if (imageExts.includes(ext)) {
-      const content = fs.readFileSync(filePath);
-      const base64 = content.toString('base64');
-      const mimeTypes: Record<string, string> = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.svg': 'image/svg+xml',
-        '.webp': 'image/webp',
-        '.ico': 'image/x-icon',
-      };
-      res.json({
-        type: 'image',
-        mimeType: mimeTypes[ext] || 'application/octet-stream',
-        content: base64,
-      });
-    } else {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      res.json({
-        type: 'text',
-        content,
-        extension: ext,
-      });
-    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.json({ type: 'text', content, extension: ext });
   } catch (e) {
     res.status(500).json({ error: 'Failed to read file' });
+  }
+});
+
+app.get('/api/files/stream', (req, res) => {
+  const filePath = req.query.path as string;
+
+  if (!filePath || !isPathSafe(filePath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.isDirectory()) return res.status(400).end();
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp',
+      '.ico': 'image/x-icon', '.mp4': 'video/mp4', '.webm': 'video/webm',
+      '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    const fileSize = stats.size;
+    const range = req.headers.range;
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (range) {
+      const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(startStr, 10);
+      const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', end - start + 1);
+      res.status(206);
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+    } else {
+      res.setHeader('Content-Length', fileSize);
+      fs.createReadStream(filePath).pipe(res);
+    }
+  } catch (e) {
+    res.status(500).end();
   }
 });
 
