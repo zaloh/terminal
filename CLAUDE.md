@@ -40,6 +40,44 @@ cd /opt/terminal/frontend && npm run build
 sudo systemctl restart terminal-server.service
 ```
 
+## VNC Server
+
+The VNC tab provides browser-based remote desktop access to the Pi's actual Wayland desktop (labwc).
+
+**Architecture:**
+- wayvnc → captures Wayland compositor (port 5900)
+- noVNC proxy → WebSocket bridge (port 6901)
+- cloudflared tunnel → routes vnc.selst.uk
+
+**Key files:**
+- `/tmp/novnc-server.js` - noVNC WebSocket proxy
+- `/tmp/start-vnc-novnc.sh` - startup script
+- `/etc/systemd/system/vnc-novnc.service` - VNC stack service
+- `/etc/systemd/system/cloudflared-vnc.service` - VNC tunnel service
+
+**Commands:**
+```bash
+sudo systemctl status vnc-novnc           # check VNC status
+sudo systemctl restart vnc-novnc           # restart VNC
+sudo systemctl status cloudflared-vnc       # check tunnel
+journalctl -u vnc-novnc -f                 # view logs
+```
+
+**Troubleshooting:**
+```bash
+# Check wayvnc is running
+ps aux | grep wayvnc
+
+# Check ports
+ss -tlnp | grep -E '5900|6901'
+
+# Test VNC directly
+node -e "const net=require('net'); const c=net.createConnection(5900,'127.0.0.1'); c.on('connect',()=>{console.log('OK');c.destroy()})"
+
+# Test WebSocket through proxy
+node -e "const WebSocket=require('/tmp/node_modules/ws'); const ws=new WebSocket('ws://localhost:6901/websockify'); ws.on('open',()=>{console.log('OK');ws.close()}); ws.on('error',e=>console.log('Error:',e.message))"
+```
+
 ## Cloudflare Tunnel
 
 - **Tunnel**: `selst.uk` (using cloudflared service)
@@ -60,10 +98,10 @@ See [CLOUDFLARE_ACCESS_SETUP.md](./CLOUDFLARE_ACCESS_SETUP.md) for detailed setu
 
 **Quick setup when you have credentials:**
 ```bash
-export CF_API_TOKEN="your-api-token"
+export CF_API_TOKEN="***"
 export CF_TEAM_NAME="your-team-name"
 export GOOGLE_CLIENT_ID="your-google-oauth-client-id"
-export GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"
+export GOOGLE_CLIENT_SECRET="your-g...cret"
 /opt/terminal/setup-cloudflare-access.sh
 ```
 
