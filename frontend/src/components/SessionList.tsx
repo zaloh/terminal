@@ -32,6 +32,8 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
   const [newSessionName, setNewSessionName] = useState('');
   const [showNewSession, setShowNewSession] = useState(false);
   const [error, setError] = useState('');
+  const [deletingSession, setDeletingSession] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   const fetchSessions = async () => {
     try {
@@ -74,6 +76,35 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
     }
   };
 
+  const handleDeleteSession = async (name: string) => {
+    setDeletingSession(name);
+    setDeleteError('');
+
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        // Refresh the session list
+        await fetchSessions();
+      } else {
+        const { error } = await res.json();
+        setDeleteError(error || 'Failed to delete session');
+      }
+    } catch (e) {
+      setDeleteError('Failed to delete session');
+    } finally {
+      setDeletingSession(null);
+    }
+  };
+
+  const confirmDeleteSession = (name: string) => {
+    if (window.confirm(`Are you sure you want to close the session "${name}"?`)) {
+      handleDeleteSession(name);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#1a1a2e] flex flex-col items-center p-4">
       <div className="w-full max-w-md">
@@ -87,8 +118,20 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
         {loading ? (
           <div className="text-slate-400 text-center py-8">Loading...</div>
         ) : (
-          <div className="bg-[#252540] rounded-lg overflow-hidden border border-[#2d2d4a]">
-            {sessions.length === 0 ? (
+          <>
+            {deleteError && (
+              <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-4 text-sm">
+                {deleteError}
+                <button
+                  onClick={() => setDeleteError('')}
+                  className="float-right text-red-300 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <div className="bg-[#252540] rounded-lg overflow-hidden border border-[#2d2d4a]">
+              {sessions.length === 0 ? (
               <div className="text-slate-400 text-center py-8 px-4">
                 No active sessions
               </div>
@@ -123,6 +166,29 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
                             d="M9 5l7 7-7 7"
                           />
                         </svg>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDeleteSession(session.name);
+                          }}
+                          disabled={deletingSession === session.name}
+                          className="p-1 text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                          title="Close session"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
                       </div>
                     </button>
                   </li>
@@ -130,6 +196,7 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
               </ul>
             )}
           </div>
+          </>
         )}
 
         <div className="mt-6">
