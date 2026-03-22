@@ -75,8 +75,8 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#1a1a2e] flex flex-col items-center p-4">
-      <div className="w-full max-w-md">
+    <div className="h-dvh bg-[#1a1a2e] flex flex-col items-center">
+      <div className="w-full max-w-md flex flex-col flex-1 min-h-0 p-4">
         <h1 className="text-2xl font-semibold text-white text-center mb-2 mt-8">
           Terminal Sessions
         </h1>
@@ -84,55 +84,57 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
           Select a session or create a new one
         </p>
 
-        {loading ? (
-          <div className="text-slate-400 text-center py-8">Loading...</div>
-        ) : (
-          <div className="bg-[#252540] rounded-lg overflow-hidden border border-[#2d2d4a]">
-            {sessions.length === 0 ? (
-              <div className="text-slate-400 text-center py-8 px-4">
-                No active sessions
-              </div>
-            ) : (
-              <ul className="divide-y divide-[#2d2d4a]">
-                {sessions.map((session) => (
-                  <li key={session.name}>
-                    <button
-                      onClick={() => onSelectSession(session.name)}
-                      className="w-full px-4 py-4 flex items-center justify-between hover:bg-[#2d2d4a] transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-[#4fd1c5]"></span>
-                        <span className="text-white font-medium">
-                          {session.name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-slate-500 text-sm">
-                          {formatTimeAgo(session.lastAccess)}
-                        </span>
-                        <svg
-                          className="w-5 h-5 text-slate-500"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {loading ? (
+            <div className="text-slate-400 text-center py-8">Loading...</div>
+          ) : (
+            <div className="bg-[#252540] rounded-lg overflow-hidden border border-[#2d2d4a]">
+              {sessions.length === 0 ? (
+                <div className="text-slate-400 text-center py-8 px-4">
+                  No active sessions
+                </div>
+              ) : (
+                <ul className="divide-y divide-[#2d2d4a]">
+                  {sessions.map((session) => (
+                    <li key={session.name}>
+                      <button
+                        onClick={() => onSelectSession(session.name)}
+                        className="w-full px-4 py-4 flex items-center justify-between hover:bg-[#2d2d4a] transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-2 h-2 rounded-full bg-[#4fd1c5]"></span>
+                          <span className="text-white font-medium">
+                            {session.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-500 text-sm">
+                            {formatTimeAgo(session.lastAccess)}
+                          </span>
+                          <svg
+                            className="w-5 h-5 text-slate-500"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex-shrink-0">
           {showNewSession ? (
             <div className="bg-[#252540] rounded-lg p-4 border border-[#2d2d4a]">
               <input
