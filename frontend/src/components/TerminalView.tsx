@@ -177,7 +177,7 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           </div>
           {status && (
             <div
-              className="flex items-center gap-1.5 text-[10px] max-w-[200px]"
+              className="flex items-center gap-1.5 text-[10px]"
               title={meta.task ? `${status.label}: ${meta.task}` : status.label}
             >
               <span
@@ -185,16 +185,11 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
                 style={{ backgroundColor: status.color }}
               />
               <span
-                className="font-semibold uppercase tracking-wide flex-shrink-0"
+                className="font-semibold uppercase tracking-wide"
                 style={{ color: status.color }}
               >
                 {status.label}
               </span>
-              {meta.task && (
-                <span className="text-slate-400 truncate min-w-0">
-                  {meta.task}
-                </span>
-              )}
             </div>
           )}
         </div>
