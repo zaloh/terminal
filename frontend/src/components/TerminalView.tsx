@@ -168,35 +168,37 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className={`status-dot ${connected ? 'status-connected' : connecting ? 'status-connecting' : 'status-disconnected'}`} />
-          <span className="text-xs text-slate-500 font-mono truncate max-w-[80px]">
-            {sessionName}
-          </span>
-        </div>
-      </div>
-
-      {/* Metadata strip: status + task summary — only shown when we have any metadata */}
-      {(status || meta.task) && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e38] border-b border-[#2d2d4a] flex-shrink-0 text-xs">
+        <div className="flex flex-col items-end gap-0.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`status-dot ${connected ? 'status-connected' : connecting ? 'status-connecting' : 'status-disconnected'}`} />
+            <span className="text-xs text-slate-500 font-mono truncate max-w-[120px]">
+              {sessionName}
+            </span>
+          </div>
           {status && (
-            <span className="flex items-center gap-1.5 flex-shrink-0" title={`Claude is ${status.label}`}>
+            <div
+              className="flex items-center gap-1.5 text-[10px] max-w-[200px]"
+              title={meta.task ? `${status.label}: ${meta.task}` : status.label}
+            >
               <span
-                className={`w-2 h-2 rounded-full ${status.pulse ? 'animate-pulse' : ''}`}
+                className={`w-1.5 h-1.5 rounded-full ${status.pulse ? 'animate-pulse' : ''}`}
                 style={{ backgroundColor: status.color }}
               />
-              <span className="text-slate-400 font-medium uppercase tracking-wide" style={{ color: status.color }}>
+              <span
+                className="font-semibold uppercase tracking-wide flex-shrink-0"
+                style={{ color: status.color }}
+              >
                 {status.label}
               </span>
-            </span>
-          )}
-          {meta.task && (
-            <span className="text-slate-300 truncate min-w-0" title={meta.task}>
-              {meta.task}
-            </span>
+              {meta.task && (
+                <span className="text-slate-400 truncate min-w-0">
+                  {meta.task}
+                </span>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* Control bar - only show on terminal tab */}
       {activeTab === 'terminal' && (

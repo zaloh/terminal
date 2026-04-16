@@ -3,8 +3,8 @@
 
 Fires on UserPromptSubmit / Stop / SessionStart / SessionEnd. Looks up the
 current tmux session via $TMUX and writes /tmp/claude-terminal-meta/<session>.json
-with status, task summary, cwd, and claude session id. Preserves any fields
-set by `tm-meta` (like preview_url) across turns.
+with status, task summary (gist of Claude's last reply), cwd, and claude
+session id. Preserves any fields set by `tm-meta` (like preview_url) across turns.
 """
 import json
 import os
@@ -15,8 +15,9 @@ import time
 from pathlib import Path
 
 META_DIR = Path("/tmp/claude-terminal-meta")
-# Preserve fields the agent sets manually via tm-meta — the hook must never clobber them.
-AGENT_OWNED_FIELDS = ("preview_url",)
+TASK_MAX = 160
+# Headings/meta-prefixes that make poor glance-summaries — skip them when extracting.
+BORING_PREFIXES = ("let me ", "i'll ", "i will ", "now ", "ok ", "okay ", "sure")
 
 
 def tmux_session():
@@ -32,14 +33,71 @@ def tmux_session():
         name = r.stdout.strip()
         if not name:
             return None
-        # Defensive: strip path separators so the session name is safe as a filename.
         return re.sub(r"[/\\]", "_", name)
     except Exception:
         return None
 
 
-def shorten(text, n=140):
-    return " ".join((text or "").split())[:n]
+def clean_line(text: str) -> str:
+    """Flatten whitespace, strip markdown adornments that don't read well inline."""
+    text = " ".join((text or "").split())
+    # Strip common markdown: leading #, leading list markers, wrapping *, `
+    text = re.sub(r"^#+\s*", "", text)
+    text = re.sub(r"^[-*]\s+", "", text)
+    text = text.replace("**", "")
+    return text.strip()
+
+
+def summarize_reply(text: str) -> str:
+    """Pick the most meaningful line from an assistant reply and truncate it."""
+    if not text:
+        return ""
+    # Prefer a non-trivial first line; fall back to subsequent lines if boring.
+    candidates = [clean_line(l) for l in text.splitlines() if clean_line(l)]
+    for line in candidates:
+        low = line.lower()
+        if len(line) < 8:
+            continue
+        if any(low.startswith(p) for p in BORING_PREFIXES) and len(candidates) > 1:
+            continue
+        return line[:TASK_MAX] + ("…" if len(line) > TASK_MAX else "")
+    # Nothing passed the filter — return the first line we've got.
+    if candidates:
+        line = candidates[0]
+        return line[:TASK_MAX] + ("…" if len(line) > TASK_MAX else "")
+    return ""
+
+
+def last_assistant_text(transcript_path: str) -> str:
+    """Read the transcript JSONL and return the last assistant text block.
+    Reads only the tail of large files to stay fast."""
+    if not transcript_path or not os.path.exists(transcript_path):
+        return ""
+    try:
+        size = os.path.getsize(transcript_path)
+        tail_bytes = 200 * 1024  # last 200KB is plenty for one turn
+        with open(transcript_path, "rb") as f:
+            if size > tail_bytes:
+                f.seek(size - tail_bytes)
+                f.readline()  # discard partial line
+            data = f.read().decode("utf-8", errors="replace")
+        lines = [l for l in data.splitlines() if l.strip()]
+        for line in reversed(lines):
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") != "assistant":
+                continue
+            content = ((obj.get("message") or {}).get("content")) or []
+            for block in reversed(content):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    t = (block.get("text") or "").strip()
+                    if t:
+                        return t
+    except Exception:
+        pass
+    return ""
 
 
 def main():
@@ -67,25 +125,28 @@ def main():
     meta["cwd"] = event.get("cwd") or meta.get("cwd") or os.getcwd()
     meta["claude_session_id"] = event.get("session_id") or meta.get("claude_session_id")
     meta["updated_at"] = int(time.time())
+    transcript = event.get("transcript_path") or ""
 
     if hook == "UserPromptSubmit":
+        # Mark as working. Keep the previous turn's task so the mobile UI has useful
+        # context while Claude starts a new response — it updates on Stop.
         meta["status"] = "working"
-        task = shorten(event.get("prompt", ""))
-        if task:
-            meta["task"] = task
     elif hook == "Stop":
         meta["status"] = "waiting"
+        # Extract a human-readable summary from Claude's latest reply.
+        summary = summarize_reply(last_assistant_text(transcript))
+        if summary:
+            meta["task"] = summary
     elif hook == "SessionStart":
         meta.setdefault("status", "idle")
         meta.setdefault("task", "")
+        # On resume, try to seed task from the transcript.
+        if not meta.get("task"):
+            summary = summarize_reply(last_assistant_text(transcript))
+            if summary:
+                meta["task"] = summary
     elif hook == "SessionEnd":
         meta["status"] = "finished"
-
-    # Agent-owned fields are preserved implicitly (we never write them here),
-    # but if the file was hand-wiped ensure they aren't stale.
-    for f in AGENT_OWNED_FIELDS:
-        if f in meta and not meta[f]:
-            meta.pop(f, None)
 
     try:
         tmp = path.with_suffix(".json.tmp")
