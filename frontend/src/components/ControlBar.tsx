@@ -1,63 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 interface ControlBarProps {
   onKey: (key: string) => void;
-  onCopy: () => Promise<void>;
   onPaste: () => Promise<void>;
+  onToggleInput: () => void;
+  inputVisible: boolean;
 }
 
-type Modifier = 'ctrl' | 'alt' | 'shift';
-
-export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) {
-  const [activeModifiers, setActiveModifiers] = useState<Set<Modifier>>(new Set());
-
-  const toggleModifier = useCallback((mod: Modifier) => {
-    setActiveModifiers((prev) => {
-      const next = new Set(prev);
-      if (next.has(mod)) {
-        next.delete(mod);
-      } else {
-        next.add(mod);
-      }
-      return next;
-    });
-  }, []);
-
-  const sendKey = useCallback(
-    (key: string, clearModifiers = true) => {
-      let finalKey = key;
-
-      if (activeModifiers.has('ctrl')) {
-        if (key.length === 1 && key >= 'a' && key <= 'z') {
-          finalKey = String.fromCharCode(key.charCodeAt(0) - 96);
-        } else if (key.length === 1 && key >= 'A' && key <= 'Z') {
-          finalKey = String.fromCharCode(key.charCodeAt(0) - 64);
-        } else if (key === '[') {
-          finalKey = '\x1b';
-        } else if (key === '\\') {
-          finalKey = '\x1c';
-        } else if (key === ']') {
-          finalKey = '\x1d';
-        } else if (key === '^') {
-          finalKey = '\x1e';
-        } else if (key === '_') {
-          finalKey = '\x1f';
-        }
-      }
-
-      if (activeModifiers.has('alt')) {
-        finalKey = '\x1b' + finalKey;
-      }
-
-      onKey(finalKey);
-
-      if (clearModifiers) {
-        setActiveModifiers(new Set());
-      }
-    },
-    [activeModifiers, onKey]
-  );
-
+export default function ControlBar({ onKey, onPaste, onToggleInput, inputVisible }: ControlBarProps) {
   const sendCtrlKey = useCallback(
     (char: string) => {
       const code = char.toUpperCase().charCodeAt(0) - 64;
@@ -66,11 +16,9 @@ export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) 
     [onKey]
   );
 
-  const isActive = (mod: Modifier) => activeModifiers.has(mod);
-
   return (
     <div className="flex items-center gap-1 px-2 py-2 bg-[#252540] border-b border-[#2d2d4a] overflow-x-auto flex-shrink-0">
-      {/* Terminate button */}
+      {/* X / Up / Down */}
       <div className="flex gap-1 pr-2 border-r border-[#2d2d4a]">
         <button
           className="control-btn bg-red-900 hover:bg-red-800 border-red-700"
@@ -81,13 +29,9 @@ export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
-      </div>
-
-      {/* Arrow keys */}
-      <div className="flex gap-1 px-2 border-r border-[#2d2d4a]">
         <button
           className="control-btn"
-          onClick={() => sendKey('\x1b[A', false)}
+          onClick={() => onKey('\x1b[A')}
           title="Up arrow (previous command)"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,7 +40,7 @@ export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) 
         </button>
         <button
           className="control-btn"
-          onClick={() => sendKey('\x1b[B', false)}
+          onClick={() => onKey('\x1b[B')}
           title="Down arrow (next command)"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,14 +49,16 @@ export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) 
         </button>
       </div>
 
-      {/* Copy/Paste */}
+      {/* Rich Text / Paste */}
       <div className="flex gap-1 px-2 border-r border-[#2d2d4a]">
         <button
-          className="control-btn"
-          onClick={onCopy}
-          title="Copy selected text"
+          className={`control-btn ${inputVisible ? 'active' : ''}`}
+          onClick={onToggleInput}
+          title="Toggle text input (for dictation)"
         >
-          Copy
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
         </button>
         <button
           className="control-btn"
@@ -123,43 +69,50 @@ export default function ControlBar({ onKey, onCopy, onPaste }: ControlBarProps) 
         </button>
       </div>
 
-      {/* Special keys */}
+      {/* Tab / C-b / Esc */}
       <div className="flex gap-1 px-2 border-r border-[#2d2d4a]">
         <button
           className="control-btn"
-          onClick={() => sendKey('\t', false)}
+          onClick={() => onKey('\t')}
           title="Tab (autocomplete)"
         >
           Tab
         </button>
         <button
           className="control-btn"
-          onClick={() => sendKey('\x1b', false)}
+          onClick={() => sendCtrlKey('B')}
+          title="Ctrl+B (tmux prefix)"
+        >
+          C-b
+        </button>
+        <button
+          className="control-btn"
+          onClick={() => onKey('\x1b')}
           title="Escape"
         >
           Esc
         </button>
       </div>
 
-      {/* Modifiers */}
+      {/* Left / Right */}
       <div className="flex gap-1 pl-1">
         <button
-          className={`control-btn ${isActive('ctrl') ? 'active' : ''}`}
-          onClick={() => toggleModifier('ctrl')}
+          className="control-btn"
+          onClick={() => onKey('\x1b[D')}
+          title="Left arrow"
         >
-          Ctrl
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
         <button
-          className={`control-btn ${isActive('alt') ? 'active' : ''}`}
-          onClick={() => toggleModifier('alt')}
+          className="control-btn"
+          onClick={() => onKey('\x1b[C')}
+          title="Right arrow"
         >
-          Alt
-        </button>
-        <button
-          className={`control-btn ${isActive('shift') ? 'active' : ''}`}
-          onClick={() => toggleModifier('shift')}
-        >
-          Shift
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       </div>
     </div>

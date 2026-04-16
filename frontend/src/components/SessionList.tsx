@@ -1,14 +1,30 @@
 import { useState, useEffect } from 'react';
 
+interface SessionMeta {
+  status?: 'working' | 'waiting' | 'finished' | 'idle';
+  task?: string;
+  cwd?: string;
+  preview_url?: string;
+  updated_at?: number;
+}
+
 interface Session {
   name: string;
   created: string;
   lastAccess: string;
+  meta?: SessionMeta;
 }
 
 interface SessionListProps {
   onSelectSession: (name: string) => void;
 }
+
+const STATUS_COLORS: Record<string, string> = {
+  working: '#f6ad55',
+  waiting: '#4fd1c5',
+  finished: '#68d391',
+  idle: '#718096',
+};
 
 function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -47,6 +63,8 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
 
   useEffect(() => {
     fetchSessions();
+    const id = setInterval(fetchSessions, 3000);
+    return () => clearInterval(id);
   }, []);
 
   const handleCreateSession = async () => {
@@ -95,39 +113,73 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
                 </div>
               ) : (
                 <ul className="divide-y divide-[#2d2d4a]">
-                  {sessions.map((session) => (
-                    <li key={session.name}>
-                      <button
-                        onClick={() => onSelectSession(session.name)}
-                        className="w-full px-4 py-4 flex items-center justify-between hover:bg-[#2d2d4a] transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="w-2 h-2 rounded-full bg-[#4fd1c5]"></span>
-                          <span className="text-white font-medium">
-                            {session.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-500 text-sm">
-                            {formatTimeAgo(session.lastAccess)}
-                          </span>
-                          <svg
-                            className="w-5 h-5 text-slate-500"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
+                  {sessions.map((session) => {
+                    const status = session.meta?.status;
+                    const statusColor = status ? STATUS_COLORS[status] : '#4fd1c5';
+                    const pulse = status === 'working';
+                    return (
+                      <li key={session.name}>
+                        <button
+                          onClick={() => onSelectSession(session.name)}
+                          className="w-full px-4 py-4 flex items-start justify-between gap-3 hover:bg-[#2d2d4a] transition-colors text-left"
+                        >
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <span
+                              className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${pulse ? 'animate-pulse' : ''}`}
+                              style={{ backgroundColor: statusColor }}
+                              title={status || 'no claude session'}
                             />
-                          </svg>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-white font-medium truncate">
+                                  {session.name}
+                                </span>
+                                {status && (
+                                  <span
+                                    className="text-[10px] uppercase tracking-wide font-semibold flex-shrink-0"
+                                    style={{ color: statusColor }}
+                                  >
+                                    {status}
+                                  </span>
+                                )}
+                                {session.meta?.preview_url && (
+                                  <span
+                                    className="text-[10px] uppercase tracking-wide font-semibold text-[#4fd1c5] flex-shrink-0"
+                                    title={session.meta.preview_url}
+                                  >
+                                    preview
+                                  </span>
+                                )}
+                              </div>
+                              {session.meta?.task && (
+                                <div className="text-xs text-slate-400 truncate mt-0.5">
+                                  {session.meta.task}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="text-slate-500 text-xs">
+                              {formatTimeAgo(session.lastAccess)}
+                            </span>
+                            <svg
+                              className="w-5 h-5 text-slate-500"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 5l7 7-7 7"
+                              />
+                            </svg>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>

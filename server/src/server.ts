@@ -10,6 +10,7 @@ import { spawn } from 'node-pty';
 import type { IPty } from 'node-pty';
 import { spawn as cpSpawn, execSync, execFileSync, ChildProcess } from 'child_process';
 import readline from 'readline';
+import multer from 'multer';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,8 +22,9 @@ const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6
 const TMUX_SOCKET = process.env.TMUX_SOCKET || '/tmp/orchestrator-tmux.sock';
 const tmuxSocketArg = TMUX_SOCKET ? `-S '${TMUX_SOCKET}'` : '';
 
-// Optional VNC tab - disabled by default; set VNC_URL to enable
-const VNC_URL = process.env.VNC_URL || '';
+// Directory where Claude Code hooks write per-session metadata (status, task, cwd, preview_url).
+// See ~/.claude/hooks/terminal-meta.py and ~/.claude/bin/tm-meta.
+const META_DIR = process.env.CLAUDE_META_DIR || '/tmp/claude-terminal-meta';
 
 app.use(cors());
 app.use(express.json());
@@ -34,10 +36,43 @@ if (fs.existsSync(distPath)) {
 }
 
 // Session management
+interface SessionMeta {
+  status?: 'working' | 'waiting' | 'finished' | 'idle';
+  task?: string;
+  cwd?: string;
+  preview_url?: string;
+  claude_session_id?: string;
+  updated_at?: number;
+}
+
 interface Session {
   name: string;
   created: Date;
   lastAccess: Date;
+  meta?: SessionMeta;
+}
+
+function sanitizeSessionName(name: string): string {
+  return name.replace(/[/\\]/g, '_');
+}
+
+function readSessionMeta(sessionName: string): SessionMeta | undefined {
+  try {
+    const p = path.join(META_DIR, `${sanitizeSessionName(sessionName)}.json`);
+    if (!fs.existsSync(p)) return undefined;
+    const raw = fs.readFileSync(p, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return {
+      status: parsed.status,
+      task: parsed.task,
+      cwd: parsed.cwd,
+      preview_url: parsed.preview_url,
+      claude_session_id: parsed.claude_session_id,
+      updated_at: parsed.updated_at,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function getTmuxSessions(): Session[] {
@@ -56,6 +91,7 @@ function getTmuxSessions(): Session[] {
           name,
           created: new Date(parseInt(created) * 1000),
           lastAccess: new Date(parseInt(lastAccess) * 1000),
+          meta: readSessionMeta(name),
         };
       });
   } catch {
@@ -103,7 +139,14 @@ function getTmuxPaneCwd(sessionName: string): string | null {
 
 // API Routes
 app.get('/api/config', (_req, res) => {
-  res.json({ vncUrl: VNC_URL || null, rootPath: WORKSPACE_ROOT });
+  res.json({ rootPath: WORKSPACE_ROOT });
+});
+
+// Lightweight per-session metadata endpoint — polled by TerminalView while attached.
+app.get('/api/sessions/:name/meta', (req, res) => {
+  const meta = readSessionMeta(req.params.name);
+  if (!meta) return res.json({});
+  res.json(meta);
 });
 
 app.get('/api/sessions', (_req, res) => {
@@ -140,6 +183,11 @@ app.delete('/api/sessions/:name', (req, res) => {
       `tmux ${tmuxSocketArg} kill-session -t '${name}' 2>/dev/null`,
       { encoding: 'utf-8' }
     );
+    // Drop any metadata file so the session fully disappears from the UI.
+    try {
+      const metaPath = path.join(META_DIR, `${sanitizeSessionName(name)}.json`);
+      if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    } catch {}
     res.json({ success: true });
   } catch {
     res.status(404).json({ error: 'Session not found' });
@@ -164,17 +212,19 @@ app.get('/api/files', (req, res) => {
     const entries = fs.readdirSync(requestedPath, { withFileTypes: true });
     const files = entries.map(entry => {
       const fullPath = path.join(requestedPath, entry.name);
-      let stats;
+      const isDir = entry.isDirectory();
+      let size: number | null = null;
+      let modified: Date = new Date();
       try {
-        stats = fs.statSync(fullPath);
-      } catch {
-        stats = null;
-      }
+        const stats = fs.statSync(fullPath);
+        modified = stats.mtime;
+        if (!isDir) size = stats.size;
+      } catch {}
       return {
         name: entry.name,
-        type: entry.isDirectory() ? 'directory' : 'file',
-        size: stats?.size || 0,
-        modified: stats?.mtime || new Date(),
+        type: isDir ? 'directory' : 'file',
+        size,
+        modified,
       };
     });
 
@@ -193,6 +243,36 @@ app.get('/api/files', (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed to read directory' });
+  }
+});
+
+// Async directory sizes — returns { sizes: { name: bytes, ... } }
+app.get('/api/files/dir-sizes', (req, res) => {
+  const requestedPath = (req.query.path as string) || WORKSPACE_ROOT;
+
+  if (!isPathSafe(requestedPath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    // du -b --max-depth=1 on the directory, with a timeout
+    const result = execSync(
+      `du -b --max-depth=1 ${JSON.stringify(requestedPath)} 2>/dev/null || true`,
+      { encoding: 'utf-8', timeout: 15000 }
+    );
+    const sizes: Record<string, number> = {};
+    for (const line of result.trim().split('\n')) {
+      if (!line) continue;
+      const [sizeStr, dirPath] = line.split('\t');
+      if (!dirPath) continue;
+      const name = path.basename(dirPath);
+      // Skip the parent directory entry itself
+      if (path.resolve(dirPath) === path.resolve(requestedPath)) continue;
+      sizes[name] = parseInt(sizeStr, 10) || 0;
+    }
+    res.json({ sizes });
+  } catch {
+    res.json({ sizes: {} });
   }
 });
 
@@ -219,6 +299,102 @@ app.get('/api/files/content', (req, res) => {
     res.json({ type: 'text', content, extension: ext });
   } catch (e) {
     res.status(500).json({ error: 'Failed to read file' });
+  }
+});
+
+app.put('/api/files/content', (req, res) => {
+  const filePath = req.body?.path as string;
+  const content = req.body?.content as string;
+
+  if (!filePath || typeof content !== 'string' || !isPathSafe(filePath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.isDirectory()) {
+      return res.status(400).json({ error: 'Cannot write to directory' });
+    }
+  } catch {
+    // File doesn't exist yet — that's OK, we'll create it
+  }
+
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save file' });
+  }
+});
+
+// Create a new directory
+app.post('/api/files/mkdir', (req, res) => {
+  const dirPath = req.body?.path as string;
+
+  if (!dirPath || !isPathSafe(dirPath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  if (fs.existsSync(dirPath)) {
+    return res.status(409).json({ error: 'Already exists' });
+  }
+
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to create directory' });
+  }
+});
+
+// Create a new empty file
+app.post('/api/files/create', (req, res) => {
+  const filePath = req.body?.path as string;
+
+  if (!filePath || !isPathSafe(filePath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  if (fs.existsSync(filePath)) {
+    return res.status(409).json({ error: 'Already exists' });
+  }
+
+  try {
+    fs.writeFileSync(filePath, '', 'utf-8');
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to create file' });
+  }
+});
+
+// Move / rename a file or directory
+app.post('/api/files/move', (req, res) => {
+  const src = req.body?.src as string;
+  const dest = req.body?.dest as string;
+
+  if (!src || !dest || !isPathSafe(src) || !isPathSafe(dest)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  if (!fs.existsSync(src)) {
+    return res.status(404).json({ error: 'Source not found' });
+  }
+
+  if (fs.existsSync(dest)) {
+    return res.status(409).json({ error: 'Destination already exists' });
+  }
+
+  try {
+    fs.renameSync(src, dest);
+    res.json({ success: true });
+  } catch {
+    // rename may fail across filesystems
+    try {
+      execSync(`mv ${JSON.stringify(src)} ${JSON.stringify(dest)}`);
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: 'Failed to move' });
+    }
   }
 });
 
@@ -262,6 +438,82 @@ app.get('/api/files/stream', (req, res) => {
   } catch (e) {
     res.status(500).end();
   }
+});
+
+// Download directory as zip
+app.get('/api/files/download-zip', (req, res) => {
+  const dirPath = req.query.path as string;
+
+  if (!dirPath || !isPathSafe(dirPath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const stats = fs.statSync(dirPath);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+  } catch {
+    return res.status(404).json({ error: 'Directory not found' });
+  }
+
+  const dirName = path.basename(dirPath);
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${dirName}.zip"`);
+
+  const { spawn: cpSpawnLocal } = require('child_process');
+  const zipProc = cpSpawnLocal('zip', ['-r', '-q', '-', '.'], { cwd: dirPath, stdio: ['ignore', 'pipe', 'pipe'] });
+  zipProc.stdout.pipe(res);
+  zipProc.stderr.on('data', (data: Buffer) => {
+    console.error(`[zip] ${data.toString()}`);
+  });
+  zipProc.on('error', () => {
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to create zip' });
+  });
+  req.on('close', () => { zipProc.kill(); });
+});
+
+// File upload API — multer stores to a temp dir, then we move to the target directory
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB limit
+
+app.post('/api/files/upload', upload.array('files'), (req, res) => {
+  const targetDir = (req.body?.path as string) || WORKSPACE_ROOT;
+
+  if (!isPathSafe(targetDir)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+    return res.status(400).json({ error: 'Target directory does not exist' });
+  }
+
+  const files = req.files as Express.Multer.File[];
+  if (!files || files.length === 0) {
+    return res.status(400).json({ error: 'No files provided' });
+  }
+
+  const results: { name: string; size: number; error?: string }[] = [];
+
+  for (const file of files) {
+    const destPath = path.join(targetDir, file.originalname);
+    try {
+      fs.renameSync(file.path, destPath);
+      results.push({ name: file.originalname, size: file.size });
+    } catch (e) {
+      // rename may fail across filesystems, fall back to copy
+      try {
+        fs.copyFileSync(file.path, destPath);
+        fs.unlinkSync(file.path);
+        results.push({ name: file.originalname, size: file.size });
+      } catch (e2) {
+        // Clean up temp file
+        try { fs.unlinkSync(file.path); } catch {}
+        results.push({ name: file.originalname, size: file.size, error: 'Failed to save' });
+      }
+    }
+  }
+
+  res.json({ uploaded: results });
 });
 
 // Chat session management - persist session mapping to disk for auto-resume
@@ -678,7 +930,7 @@ async function extractLastUserMessage(filePath: string, fileSize: number): Promi
 // Convert dir name like "-home-selstad-Desktop-CascadeStudio" to readable project label
 // Since hyphens are ambiguous (path sep vs part of name), reconstruct actual path
 function projectLabel(dirName: string): string {
-  const home = process.env.HOME || '/home/selstad';
+  const home = os.homedir();
   // The dir name is the absolute path with / replaced by -
   // Reconstruct by trying to find the actual directory
   const candidate = '/' + dirName.replace(/^-/, '').replace(/-/g, '/');
@@ -692,10 +944,7 @@ function projectLabel(dirName: string): string {
 // List resumable Claude sessions from all project directories
 app.get('/api/chat/history', async (_req, res) => {
   try {
-    const projectsRoot = path.join(
-      process.env.HOME || '/home/selstad',
-      '.claude', 'projects'
-    );
+    const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
 
     if (!fs.existsSync(projectsRoot)) {
       return res.json([]);

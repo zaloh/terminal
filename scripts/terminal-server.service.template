@@ -1,0 +1,20 @@
+[Unit]
+Description=Mobile Terminal Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO_DIR__/server
+# Ensure tmux server exists before Node starts (survives restarts)
+ExecStartPre=/bin/bash -c "env -u NODE_ENV tmux -S __TMUX_SOCKET__ start-server || true"
+ExecStart=__NODE_BIN__ dist/server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=__PORT__
+Environment=TMUX_SOCKET=__TMUX_SOCKET__
+# Only kill the Node process on restart - leave tmux server and sessions alive
+KillMode=process
+
+[Install]
+WantedBy=default.target

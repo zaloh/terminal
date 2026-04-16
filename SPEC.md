@@ -275,36 +275,37 @@ setfacl -R -d -m u:terminal:rwx /root/workspace
 
 ## Service Configuration
 
-The server runs as a systemd service for always-on availability:
+The server runs as a **user-level** systemd service (no sudo needed):
 
 ```ini
-# /etc/systemd/system/terminal-server.service
+# ~/.config/systemd/user/terminal-server.service
 [Unit]
 Description=Mobile Terminal Server
 After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/workspace/terminal
-ExecStart=/usr/bin/node dist/server.js
+WorkingDirectory=/home/selstad/Desktop/terminal-workspace/terminal/server
+ExecStartPre=/bin/bash -c "env -u NODE_ENV tmux -S /tmp/orchestrator-tmux.sock start-server || true"
+ExecStart=/home/selstad/.nvm/versions/node/v22.14.0/bin/node dist/server.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=PORT=3000
+KillMode=process
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
 
 ```bash
 # Enable and start:
-systemctl daemon-reload
-systemctl enable terminal-server
-systemctl start terminal-server
+systemctl --user daemon-reload
+systemctl --user enable terminal-server
+systemctl --user start terminal-server
 
 # View logs:
-journalctl -u terminal-server -f
+journalctl --user -u terminal-server -f
 ```
 
 The cloudflared tunnel should also run as a service (installed via `cloudflared service install`).

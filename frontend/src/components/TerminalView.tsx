@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Terminal from './Terminal';
 import ControlBar from './ControlBar';
 import FileBrowser from './FileBrowser';
-// import GhosttyTerminal from './GhosttyTerminal';
 import ChatView from './ChatView.tsx';
 
 interface TerminalViewProps {
@@ -10,7 +9,7 @@ interface TerminalViewProps {
   onBack: () => void;
 }
 
-type Tab = 'terminal' | 'files' | 'chat' | 'vnc';
+type Tab = 'terminal' | 'files' | 'chat' | 'preview';
 
 interface TerminalRef {
   sendInput: (data: string) => void;
@@ -21,19 +20,52 @@ interface TerminalRef {
   scrollDown: () => void;
 }
 
+interface SessionMeta {
+  status?: 'working' | 'waiting' | 'finished' | 'idle';
+  task?: string;
+  cwd?: string;
+  preview_url?: string;
+  claude_session_id?: string;
+  updated_at?: number;
+}
+
+const STATUS_STYLES: Record<string, { color: string; label: string; pulse: boolean }> = {
+  working:  { color: '#f6ad55', label: 'working',  pulse: true  },
+  waiting:  { color: '#4fd1c5', label: 'waiting',  pulse: false },
+  finished: { color: '#68d391', label: 'finished', pulse: false },
+  idle:     { color: '#718096', label: 'idle',     pulse: false },
+};
+
 export default function TerminalView({ sessionName, onBack }: TerminalViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('terminal');
   const [terminalRef, setTerminalRef] = useState<TerminalRef | null>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(true);
-  const [vncUrl, setVncUrl] = useState<string>('https://sunshine.sels.tech/play');
+  const [meta, setMeta] = useState<SessionMeta>({});
+  const [inputVisible, setInputVisible] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Poll session metadata every 2s while this view is open.
   useEffect(() => {
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(cfg => { if (cfg.vncUrl) setVncUrl(cfg.vncUrl); })
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+    const fetchMeta = async () => {
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/meta`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setMeta(data || {});
+      } catch {}
+    };
+    fetchMeta();
+    const id = setInterval(fetchMeta, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [sessionName]);
+
+  // If the user was on the Preview tab and the preview URL disappears, fall back to Terminal.
+  useEffect(() => {
+    if (activeTab === 'preview' && !meta.preview_url) setActiveTab('terminal');
+  }, [activeTab, meta.preview_url]);
 
   const handleConnectionChange = useCallback((conn: boolean, conning: boolean) => {
     setConnected(conn);
@@ -44,12 +76,6 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
     if (terminalRef) {
       terminalRef.sendInput(key);
       terminalRef.focus();
-    }
-  };
-
-  const handleCopy = async () => {
-    if (terminalRef) {
-      await terminalRef.copySelection();
     }
   };
 
@@ -66,6 +92,33 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
       }
     }
   };
+
+  const handleToggleInput = () => {
+    setInputVisible(prev => {
+      if (!prev) {
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
+      return !prev;
+    });
+  };
+
+  const handleInputSubmit = () => {
+    if (terminalRef && inputText) {
+      terminalRef.sendInput(inputText);
+      setInputText('');
+      terminalRef.focus();
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleInputSubmit();
+    }
+  };
+
+  const status = meta.status && STATUS_STYLES[meta.status] ? STATUS_STYLES[meta.status] : null;
+  const showPreview = Boolean(meta.preview_url);
 
   return (
     <div className="h-dvh flex flex-col bg-[#1a1a2e]">
@@ -101,16 +154,18 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           >
             Files
           </button>
-          <button
-            onClick={() => setActiveTab('vnc')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'vnc'
-                ? 'bg-[#4fd1c5] text-[#1a1a2e]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            VNC
-          </button>
+          {showPreview && (
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'preview'
+                  ? 'bg-[#4fd1c5] text-[#1a1a2e]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Preview
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -121,13 +176,58 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
         </div>
       </div>
 
+      {/* Metadata strip: status + task summary — only shown when we have any metadata */}
+      {(status || meta.task) && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e38] border-b border-[#2d2d4a] flex-shrink-0 text-xs">
+          {status && (
+            <span className="flex items-center gap-1.5 flex-shrink-0" title={`Claude is ${status.label}`}>
+              <span
+                className={`w-2 h-2 rounded-full ${status.pulse ? 'animate-pulse' : ''}`}
+                style={{ backgroundColor: status.color }}
+              />
+              <span className="text-slate-400 font-medium uppercase tracking-wide" style={{ color: status.color }}>
+                {status.label}
+              </span>
+            </span>
+          )}
+          {meta.task && (
+            <span className="text-slate-300 truncate min-w-0" title={meta.task}>
+              {meta.task}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Control bar - only show on terminal tab */}
       {activeTab === 'terminal' && (
         <ControlBar
           onKey={handleControlKey}
-          onCopy={handleCopy}
           onPaste={handlePaste}
+          onToggleInput={handleToggleInput}
+          inputVisible={inputVisible}
         />
+      )}
+
+      {/* Rich text input area */}
+      {activeTab === 'terminal' && inputVisible && (
+        <div className="flex items-stretch gap-2 px-2 py-2 bg-[#1e1e38] border-b border-[#2d2d4a] flex-shrink-0">
+          <textarea
+            ref={textareaRef}
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder="Type or dictate text..."
+            rows={2}
+            className="flex-1 bg-[#252540] text-white rounded-lg px-3 py-2 text-sm resize-none border border-[#3d3d5c] focus:border-[#4fd1c5] focus:outline-none placeholder-slate-500"
+          />
+          <button
+            onClick={handleInputSubmit}
+            disabled={!inputText}
+            className="px-4 bg-[#4fd1c5] text-[#1a1a2e] rounded-lg font-medium text-sm hover:bg-[#38b2ac] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Send
+          </button>
+        </div>
       )}
 
       {/* Main content */}
@@ -139,12 +239,12 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
             onConnectionChange={handleConnectionChange}
           />
         )}
-        {activeTab === 'files' && <FileBrowser />}
+        {activeTab === 'files' && <FileBrowser sessionCwd={meta.cwd} />}
         {activeTab === 'chat' && <ChatView sessionName={sessionName} />}
-        {activeTab === 'vnc' && (
+        {activeTab === 'preview' && meta.preview_url && (
           <iframe
-            src={vncUrl}
-            className="w-full h-full border-0"
+            src={meta.preview_url}
+            className="w-full h-full border-0 bg-white"
             allow="fullscreen; clipboard-read; clipboard-write"
           />
         )}

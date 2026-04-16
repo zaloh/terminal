@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
 
@@ -32,10 +32,16 @@ export default function FileViewer({ filePath, onBack }: FileViewerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [zoomed, setZoomed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const ext = ('.' + filePath.split('.').pop()).toLowerCase();
   const isImage = IMAGE_EXTS.has(ext);
   const isVideo = VIDEO_EXTS.has(ext);
+  const isTextFile = !isImage && !isVideo;
   const streamUrl = `/api/files/stream?path=${encodeURIComponent(filePath)}`;
   const fileName = filePath.split('/').pop() || '';
 
@@ -49,6 +55,72 @@ export default function FileViewer({ filePath, onBack }: FileViewerProps) {
       .catch(e => setError(typeof e === 'string' ? e : 'Failed to load file'))
       .finally(() => setLoading(false));
   }, [filePath]);
+
+  const enterEditMode = useCallback(() => {
+    if (!textContent) return;
+    setEditText(textContent.content);
+    setEditing(true);
+    setDirty(false);
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [textContent]);
+
+  const exitEditMode = useCallback(() => {
+    if (dirty) {
+      if (!confirm('Discard unsaved changes?')) return;
+    }
+    setEditing(false);
+    setDirty(false);
+  }, [dirty]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/files/content', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath, content: editText }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save');
+      }
+      // Update the viewed content and exit edit mode
+      setTextContent(prev => prev ? { ...prev, content: editText } : prev);
+      setEditing(false);
+      setDirty(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }, [filePath, editText]);
+
+  const handleEditChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditText(e.target.value);
+    setDirty(true);
+  }, []);
+
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl/Cmd+S to save
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      handleSave();
+    }
+    // Tab inserts spaces instead of changing focus
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newText = editText.substring(0, start) + '  ' + editText.substring(end);
+      setEditText(newText);
+      setDirty(true);
+      requestAnimationFrame(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
+      });
+    }
+  }, [editText, handleSave]);
 
   const renderContent = () => {
     if (isImage) {
@@ -79,6 +151,22 @@ export default function FileViewer({ filePath, onBack }: FileViewerProps) {
     if (loading) return <div className="text-slate-400 text-center py-8">Loading...</div>;
     if (error) return <div className="text-red-400 text-center py-8">{error}</div>;
     if (!textContent) return <div className="text-slate-400 text-center py-8">No content</div>;
+
+    if (editing) {
+      return (
+        <div className="flex flex-col h-full">
+          <textarea
+            ref={textareaRef}
+            value={editText}
+            onChange={handleEditChange}
+            onKeyDown={handleEditKeyDown}
+            spellCheck={false}
+            className="flex-1 w-full bg-[#1a1a2e] text-slate-200 font-mono text-sm p-3 resize-none focus:outline-none leading-relaxed"
+            style={{ tabSize: 2 }}
+          />
+        </div>
+      );
+    }
 
     const language = getLanguage(textContent.extension);
     let highlighted: string;
@@ -118,18 +206,48 @@ export default function FileViewer({ filePath, onBack }: FileViewerProps) {
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 bg-[#252540] border-b border-[#2d2d4a]">
         <button
-          onClick={onBack}
-          className="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-[#2d2d4a]"
+          onClick={editing ? exitEditMode : onBack}
+          className="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-[#2d2d4a] flex-shrink-0"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="text-sm text-white font-medium truncate flex-1">{fileName}</span>
+        <span className="text-sm text-white font-medium truncate flex-1 min-w-0">
+          {fileName}
+          {editing && dirty && <span className="text-[#4fd1c5] ml-1">(modified)</span>}
+        </span>
+
+        {/* Edit / Save buttons — only for text files */}
+        {isTextFile && textContent && !loading && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {editing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !dirty}
+                  className="px-3 py-1.5 bg-[#4fd1c5] text-[#1a1a2e] rounded-lg text-sm font-medium hover:bg-[#38b2ac] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={enterEditMode}
+                className="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-[#2d2d4a]"
+                title="Edit file"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-[#252540]">
+      <div className={`flex-1 overflow-y-auto ${editing ? '' : 'bg-[#252540]'}`}>
         {renderContent()}
       </div>
 

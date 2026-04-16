@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""tm-meta: set terminal-UI metadata for the current tmux session.
+
+Usage:
+  tm-meta preview <url>         # register a dev-server preview URL (shortcut)
+  tm-meta set <key> <value>     # set any field (e.g. task, preview_url)
+  tm-meta clear <key>           # remove a field
+  tm-meta get [<key>]           # print current metadata (or one field)
+
+The metadata is read by the mobile terminal web UI. Typical use:
+  tm-meta preview http://localhost:5173    # right after starting a dev server
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+META_DIR = Path("/tmp/claude-terminal-meta")
+
+
+def tmux_session():
+    t = os.environ.get("TMUX")
+    if not t:
+        return None
+    sock = t.split(",", 1)[0]
+    try:
+        r = subprocess.run(
+            ["tmux", "-S", sock, "display-message", "-p", "#S"],
+            capture_output=True, text=True, timeout=2,
+        )
+        name = r.stdout.strip()
+        if not name:
+            return None
+        return re.sub(r"[/\\]", "_", name)
+    except Exception:
+        return None
+
+
+def load(sess):
+    p = META_DIR / f"{sess}.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def save(sess, meta):
+    META_DIR.mkdir(exist_ok=True)
+    p = META_DIR / f"{sess}.json"
+    meta["session"] = sess
+    meta["updated_at"] = int(time.time())
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2))
+    tmp.replace(p)
+
+
+def main(argv):
+    sess = tmux_session()
+    if not sess:
+        print("tm-meta: not inside a tmux session", file=sys.stderr)
+        return 1
+    if len(argv) < 2:
+        print(__doc__.strip())
+        return 1
+
+    cmd = argv[1]
+    meta = load(sess)
+
+    if cmd == "get":
+        if len(argv) == 2:
+            print(json.dumps(meta, indent=2))
+        else:
+            print(meta.get(argv[2], ""))
+        return 0
+    if cmd == "preview":
+        if len(argv) < 3:
+            print("usage: tm-meta preview <url>", file=sys.stderr); return 1
+        meta["preview_url"] = argv[2]
+    elif cmd == "set":
+        if len(argv) < 4:
+            print("usage: tm-meta set <key> <value>", file=sys.stderr); return 1
+        meta[argv[2]] = argv[3]
+    elif cmd == "clear":
+        if len(argv) < 3:
+            print("usage: tm-meta clear <key>", file=sys.stderr); return 1
+        meta.pop(argv[2], None)
+    else:
+        print(f"tm-meta: unknown command: {cmd}", file=sys.stderr)
+        return 1
+
+    save(sess, meta)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

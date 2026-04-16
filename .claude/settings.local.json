@@ -1,8 +1,11 @@
 {
-  "outputStyle": "default",
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(cp ~/.claude/hooks/terminal-meta.py scripts/hooks/terminal-meta.py)",
+      "Bash(cp ~/.claude/bin/tm-meta scripts/bin/tm-meta)",
+      "Bash(chmod +x scripts/hooks/terminal-meta.py scripts/bin/tm-meta)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }

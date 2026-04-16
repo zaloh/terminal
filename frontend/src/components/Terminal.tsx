@@ -241,17 +241,8 @@ export default function Terminal({ sessionName, onReady, onConnectionChange }: T
     // instead of being intercepted by xterm (which converts them to arrow keys)
     terminal.attachCustomWheelEventHandler(() => false);
 
-    // Load WebGL addon after terminal is opened
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
-      terminal.loadAddon(webglAddon);
-      webglAddonRef.current = webglAddon;
-    } catch (e) {
-      console.warn('WebGL addon failed to load:', e);
-    }
+    // WebGL disabled — causes glyph corruption on this system (Playwright Chrome install may have broken GPU context)
+    // Using xterm.js DOM renderer instead
 
     // Get the actual column width based on container
     const updateCols = () => {
