@@ -1,0 +1,12 @@
+[Unit]
+Description=noVNC HTTP + WebSocket-to-TCP proxy for the Terminal UI
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=__NODE_BIN__ __REPO_DIR__/scripts/novnc-server.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

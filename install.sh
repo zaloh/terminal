@@ -9,12 +9,17 @@
 #   --no-hooks      skip wiring up Claude Code hooks / tm-meta
 #   --no-start      install the service but do not enable/start it
 #   --dev           install for development only (deps + hooks, no build/service)
+#   --with-vnc      also install the noVNC HTTP + WebSocket proxy (port 6901)
+#                   Requires a running VNC server on localhost:5900 (wayvnc/x11vnc)
+#                   and the 'novnc' system package at /usr/share/novnc.
 #
 # Env overrides (also honored by the service template):
 #   PORT                  default 3000
 #   TMUX_SOCKET           default /tmp/orchestrator-tmux.sock
 #   CLAUDE_META_DIR       default /tmp/claude-terminal-meta
 #   NODE_BIN              default $(command -v node)
+#   VNC_URL               URL exposed by /api/config so the UI shows a VNC tab
+#                         (e.g. http://localhost:6901 or a cloudflared tunnel URL)
 
 set -euo pipefail
 
@@ -25,6 +30,7 @@ INSTALL_SERVICE=1
 INSTALL_HOOKS=1
 START_SERVICE=1
 DEV_ONLY=0
+WITH_VNC=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -32,8 +38,9 @@ for arg in "$@"; do
     --no-hooks)   INSTALL_HOOKS=0 ;;
     --no-start)   START_SERVICE=0 ;;
     --dev)        DEV_ONLY=1; INSTALL_SERVICE=0 ;;
+    --with-vnc)   WITH_VNC=1 ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "unknown flag: $arg" >&2; exit 1 ;;
@@ -169,6 +176,37 @@ if [[ "$INSTALL_SERVICE" -eq 1 ]]; then
     sleep 1
     systemctl --user --no-pager status terminal-server | head -5 || true
     log "service running on http://localhost:${PORT}"
+  fi
+fi
+
+# --- noVNC proxy (optional) ---------------------------------------------------
+if [[ "$WITH_VNC" -eq 1 ]]; then
+  if [[ ! -d /usr/share/novnc ]]; then
+    warn "/usr/share/novnc not found — install the 'novnc' system package first"
+    warn "  Debian/Ubuntu: sudo apt install novnc"
+    warn "  Skipping noVNC proxy service install."
+  else
+    log "installing scripts/ deps (noVNC proxy)"
+    (cd "$REPO_DIR/scripts" && npm install --no-audit --no-fund)
+
+    NOVNC_UNIT="${HOME}/.config/systemd/user/novnc-proxy.service"
+    mkdir -p "$(dirname "$NOVNC_UNIT")"
+    sed \
+      -e "s|__REPO_DIR__|${REPO_DIR}|g" \
+      -e "s|__NODE_BIN__|${NODE_BIN}|g" \
+      "$REPO_DIR/scripts/novnc-proxy.service.template" > "$NOVNC_UNIT"
+    log "installed systemd unit → $NOVNC_UNIT"
+
+    systemctl --user daemon-reload
+    if [[ "$START_SERVICE" -eq 1 ]]; then
+      systemctl --user enable novnc-proxy >/dev/null
+      systemctl --user restart novnc-proxy
+      sleep 1
+      systemctl --user --no-pager status novnc-proxy | head -5 || true
+      log "noVNC proxy on http://localhost:6901"
+      log "NOTE: requires a VNC server listening on localhost:5900 (e.g. wayvnc, x11vnc)"
+      log "      set VNC_URL in .env (or via Cloudflare tunnel) to expose a VNC tab in the UI"
+    fi
   fi
 fi
 
