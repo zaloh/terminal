@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(os.homedir(), 'Desktop');
 const TMUX_USER = process.env.TMUX_USER || os.userInfo().username;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '6291456', 10); // 6MB default
+const VNC_URL = process.env.VNC_URL || '';
 
 // Shared tmux socket path - connects to orchestrator sessions
 const TMUX_SOCKET = process.env.TMUX_SOCKET || '/tmp/orchestrator-tmux.sock';
@@ -139,7 +140,7 @@ function getTmuxPaneCwd(sessionName: string): string | null {
 
 // API Routes
 app.get('/api/config', (_req, res) => {
-  res.json({ rootPath: WORKSPACE_ROOT });
+  res.json({ rootPath: WORKSPACE_ROOT, vncUrl: VNC_URL });
 });
 
 // Lightweight per-session metadata endpoint — polled by TerminalView while attached.

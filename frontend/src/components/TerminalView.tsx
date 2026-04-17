@@ -9,7 +9,7 @@ interface TerminalViewProps {
   onBack: () => void;
 }
 
-type Tab = 'terminal' | 'files' | 'chat' | 'preview';
+type Tab = 'terminal' | 'files' | 'chat' | 'preview' | 'vnc';
 
 interface TerminalRef {
   sendInput: (data: string) => void;
@@ -44,7 +44,16 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
   const [meta, setMeta] = useState<SessionMeta>({});
   const [inputVisible, setInputVisible] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [vncUrl, setVncUrl] = useState<string>('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch VNC URL from server config once on mount.
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => { if (cfg.vncUrl) setVncUrl(cfg.vncUrl); })
+      .catch(() => {});
+  }, []);
 
   // Poll session metadata every 2s while this view is open.
   useEffect(() => {
@@ -133,39 +142,20 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           </svg>
         </button>
 
-        <div className="flex gap-1 bg-[#1a1a2e] rounded-lg p-1">
-          <button
-            onClick={() => setActiveTab('terminal')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'terminal'
-                ? 'bg-[#4fd1c5] text-[#1a1a2e]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Terminal
-          </button>
-          <button
-            onClick={() => setActiveTab('files')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'files'
-                ? 'bg-[#4fd1c5] text-[#1a1a2e]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Files
-          </button>
-          {showPreview && (
+        <div className="flex gap-1 bg-[#1a1a2e] rounded-lg p-1 overflow-x-auto max-w-[55vw] scrollbar-none">
+          {(['terminal', 'files', ...(vncUrl ? ['vnc'] : []), ...(showPreview ? ['preview'] : [])] as Tab[]).map(tab => (
             <button
-              onClick={() => setActiveTab('preview')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'preview'
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                activeTab === tab
                   ? 'bg-[#4fd1c5] text-[#1a1a2e]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Preview
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
-          )}
+          ))}
         </div>
 
         <div className="flex flex-col items-end gap-0.5 min-w-0">
@@ -237,6 +227,13 @@ export default function TerminalView({ sessionName, onBack }: TerminalViewProps)
           />
         )}
         {activeTab === 'files' && <FileBrowser sessionCwd={meta.cwd} />}
+        {activeTab === 'vnc' && vncUrl && (
+          <iframe
+            src={vncUrl}
+            className="w-full h-full border-0 bg-black"
+            allow="fullscreen; clipboard-read; clipboard-write"
+          />
+        )}
         {activeTab === 'chat' && <ChatView sessionName={sessionName} />}
         {activeTab === 'preview' && meta.preview_url && (
           <iframe
